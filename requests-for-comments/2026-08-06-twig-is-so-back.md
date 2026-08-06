@@ -9,7 +9,8 @@ We're working on improving this by providing real use case content, but I think 
 **Who we're building for:**
 
 - **Prospective self-driving users:** – Our ICP: AI-pilled engineers that review more code than they write by hand at companies of any size, anywhere. They need something real and tangible to look at before they'll point an autonomous loop at their repo.
-- **Internal teams** – Positioning of self-driving is doomed to spread across many different teams. Docs, marketing, engineering, editorial, etc. We need one canonical artifact to link to instead of re-explaining all the time.
+- **Internal teams:** – Positioning of self-driving is doomed to spread across many different teams. Docs, marketing, engineering, editorial, sales etc. We need one canonical artifact to link to instead of re-explaining all the time.
+  - **Sales:** – Sales works with demo sites, but it would be really powerful to demo on production data without using PostHog's.
 
 ## The proposal
 
@@ -24,6 +25,8 @@ I have TWO pitches:
 - **PITCH 1: daily comp sci puzzles.** A daily-puzzle company with new logic puzzles everyday, NYT format, but instead of focusing on word games, all of the games are rooted in computer science principles. Games are 2-5 minutes each, support streaks, and have spoiler-free share cards to share with friends. We can launch with one flagship game, and build more from there.
 
 - **PITCH 2: sell twigs to birds.** This is the kookier one, but hear me out. People who own bird feeders with cameras (or we can get some people internally to set some up) opt in to share their live feeds. We use vision models to figure out which nesting materials birds prefer, then open a store selling bundles of the winners. It's silly, but it's a literal self-driving use case: product decisions are driven end to end by AI watching real users. Those users just happen to be birds lol.
+
+- **PITCH 3: we users choose.** Great suggestion from @mjwarren3. Customer discovery is a part of self-driving I don't even think we explain much on the website or docs site. We could let users choose what we build, then use that data to kick off self-driving.
 
 I personally love the bird idea, for the absurdity of it. But I am not married to either... if anyone else has any other ideas, I am all ears.
 
