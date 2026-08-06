@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+    - name: Messaging, events or launch plans
+      url: https://github.com/PostHog/marketing/issues/new/choose
+      about: Email and customer messaging, event plans, community event proposals, and launch plans now live in the marketing repo.
+    - name: Anything that needs to stay private
+      url: https://github.com/PostHog/requests-for-comments-internal/issues/new/choose
+      about: Use the internal repo if your request involves customer data, personal information, or other sensitive details.
