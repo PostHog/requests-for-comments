@@ -90,15 +90,15 @@ Why merge?
 Mockups from working prototype, using existing twig branding:
 
 Game prototype:
-![Game view](images/2026-08-06-twig-is-so-back/twig1.png)
+![Game view](images/2026-08-06-twig-is-so-back/gameview.png)
 
 Win card:
-![Win view](images/2026-08-06-twig-is-so-back/twig2.png)
+![Win view](images/2026-08-06-twig-is-so-back/cardview.png)
 
 **Accessibility is a launch requirement.** A color-grid game locks out colorblind users, so I've designed for this. The prototype has shapes mode where every color carries a distinct glyph.
 
 Shapes mode:
-![Shapes view](images/2026-08-06-twig-is-so-back/twig3.png)
+![Shapes view](images/2026-08-06-twig-is-so-back/shapemode.png)
 
 I also need to design for signal supply:
 - User-facing errors and replay-able frustration
