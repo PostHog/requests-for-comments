@@ -95,6 +95,9 @@ Game prototype:
 Win card:
 ![Win view](images/2026-08-06-twig-is-so-back/cardview.png)
 
+Playtest (yes I lost lol):
+![Playtest](images/2026-08-06-twig-is-so-back/playtest.png)
+
 **Accessibility is a launch requirement.** A color-grid game locks out colorblind users, so I've designed for this. The prototype has shapes mode where every color carries a distinct glyph.
 
 Shapes mode:
