@@ -87,7 +87,7 @@ Why merge?
 - Difficulty is scalable: grid size, number of edits, edit subletly, conflict placement. This means scouts can monitor difficulty srift and tune as needed.
 - The theme suits our ICP :) it's a merge conflict! It's also visually appealing and engaging for others that aren't engineers.
 
-Mockups from working prototype, using existing twig branding:
+Mockups from working prototype, using existing twig branding. These are VERY rough agent generated prototypes, I will design them by hand once the ball is moving, and create design guidelines for the agents in the future:
 
 Game prototype:
 ![Game view](images/2026-08-06-twig-is-so-back/gameview.png)
