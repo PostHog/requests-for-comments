@@ -5,11 +5,12 @@
 
 ## TLDR
 
-Our access control model no longer scales with our access control needs. As we add access control in different shapes to more places, we are increasingly relying on one-off implementations that take lots of effort to build, verify, and ship. Additionally, auditing existing access control logic has become increasingly difficult as the rules are not centralized and are spread throughout different parts of the codebase. This RFC proposes we adopt Relationship-Based Access Control (ReBAC) as a general purpose access control engine to consolidate access control rule evaluation, abstract access control logic away from consumers, and increase auditability.
+Our access control model no longer scales with our access control needs. As we add access control to more places, we are increasingly relying on one-off hacks that slow development and break easily. Additionally, auditing existing access control logic has become more difficult because it is distributed throughout many different parts of the codebase. This RFC proposes we adopt Relationship-Based Access Control (ReBAC) as a general purpose access control engine to consolidate access control code, decouple logic from consumers, and increase auditability.
 
 ## Problem statement
 
-The current access control implementation has several problems that make it hard to develop for, fragile, and difficult to audit.
+The current access control implementation is hard to develop for, fragile, and difficult to audit, because of the following reasons.
+
 
 ### Access control logic spread across different places
 
@@ -17,51 +18,59 @@ The logic that evaluates access control rules is spread across many places in th
 - *Django viewsets and serializers*
 - *HogQL AST parser and printer*
 - *Filesystem API*
+- *Search API*
 - *Frontend access checks*
 - *One-off database queries*
 
-This has the unfortunate side-effect of:
-1. Coupling access control logic to other logic. For example, access control has become highly coupled to the HogQL implementation. This means that HogQL contributors must be explicitly aware of the access control implementation so queries perform as users expect.
-2. Access control is re-implemented in multiple places. For example, access control resolution logic is implemented on both the frontend and backend and need to be kept in sync.
-
-### Our access control needs have outpaced our access control model
-
-When our access control system was first developed, it was designed specifically around Django’s data-management patterns, and under the assumption that all resources would have the same resolution logic. For example, the following product areas have had to implement their own access control logic or have skipped implementing access control entirely:
-
-- *PostHog AI*
-- *Billing access control*
-- *Guest-mode project access*
-- *MCP*
-- *Sharing*
-
-For example, in PostHog AI `Tasks` are visible to the creating user and hidden to the rest of the team by default, however our access control implementation assumes the opposite: that objects are visible to the entire team by default.
+This:
+1. Couples access control logic to other unrelated logic. For example, access control has become highly coupled to the HogQL implementation. This means that HogQL contributors must be explicitly aware of the access control implementation so queries perform as users expect.
+2. Re-implements access control logic in multiple places. For example, access level resolution logic is implemented on both the frontend and backend and need to be kept in sync.
 
 ### Multiple access control systems
 
-As our access control model has been unable to adapt to new use-cases, multiple systems have taken shape. For example, the previously mentioned PostHog AI `Tasks` have received their own access control implementation. However, the issue is more systemic.
+When our access control system was first developed, it was designed specifically around Django’s data-management patterns, and under the assumption that all resources would be public by default to the owning project. For example, the following product areas have had to implement their own authorization logic, separate from "access control":
 
-Sharing has its own system, which has grown increasingly complex and nearly impossible to work with for large product surfaces like notebooks.
+- *PostHog AI (Tasks)* - Tasks are visible to the creating user and hidden to the rest of the team by default, however our access control implementation assumes the opposite: that objects are visible to the entire team by default.
+- *Billing access control* - Billing lives at the organization-level, but access controls live at the project level, so access control here is implemented by a hacky feature flag that, when enabled, requires the admin organization role to see the billing page.
+- *MCP* - We cannot set separate access control policies for MCP sessions
+- *Sharing* - Sharing has its own authorization system that uses its own data model and ephemeral authentication tokens.
+- *members_can_\* fields* - We store a lot of one-off columns like `members_can_invite` and `members_can_use_personal_api_keys` that are used to implement authorization policies in place.
+- *API key scopes* - There is a mismatch between the scopes you can select when creating an API key and what we show in the access control settings UI.
 
-Access to many objects isn't covered by our access control implementation, but rather by static analysis using semgrep IDOR rules.
+### There is no general purpose authorization library
 
-There are also many small access control checks that are stored as one-off database columns and evaluated in one-off implementations. For example, at the organization level `members_can_invite`, `members_can_see_org_members`, `members_can_use_personal_api_keys`, etc. But at the project level access control rules are stored in their own data model. Meaning that the evaluation of access control rules at the organization and project level are drastically different.
+Right now authorization is handled different ways in different contexts, but there is no cohesive throughline. For example, tenant isolation for organization data is handled completely differently than checking if a user is allowed to create new dashboards.
+
+In the age of agents this also means we cannot easily instruct agents to follow a specific authorization pattern. Authorization is so fractured and context-dependent that we cannot reliably tell an agent how to implement authorization when building new features. This has obvious security implications.
 
 ### Auditability
 
-Right now if a user is having trouble accessing something, we have no way of easily figuring out why. Our best bet is to dump their access control rules from the database, feed it to an agent, and ask it to figure out why it isn't working. This is because we do not have a centralized rule engine, because access control evaluation happens in many different places. So it can be very difficult to reason about the live access control logic.
+Right now if a user is having trouble accessing something, we have no way of easily figuring out why. Our best bet is to dump their access control rules from the database, feed it to an agent, and ask it to figure out why it isn't working. This is because access control evaluation happens in many different places, with different behaviors, rather than a single common code path.
 
 Additionally, we do not have an audit trail that documents access control decisions. This means we cannot retroactively determine if a user was granted or denied access to a resource, let alone understand why. As we and our customers continue to scale, this will be important to document for security incident response.
 
-## Success criteria
-*How do we know if this is successful (i.e. metrics, customer feedback), what's out of scope, what makes this ambitious?*
+### Slow development
 
-1. No customer's access is impacted by the change (they don't notice we changed the engine while they were driving)
-2. All access control evaluation flows through a single engine. There are no divergent paths with one-off access control implementations or hard-coded rules.
-3. We have audit logs documenting access control decisions
-4. We can ship new access control rules faster and it is easier for agents to work with
+For all the reasons mentioned above, developing anything touching access controls is slow. Small changes become complex. As the surface area expands, it gets harder to verify access controls behave as we expect. Some access controls we don't have a good idea how to even build.
+
+## Proposal
+
+### Vision
+
+A cultural shift at PostHog where authorization is a primary concern, and there is one interface that developers across the company use for authorization checks.
+
+### Proposal
+
+I propose we adopt relationship-based access control (ReBAC) and repackage access control as a general purpose authorization library for PostHog developers within the monorepo.
+
+### Success criteria
+
+1. No customer's access is impacted by the change.
+2. All authorization requests are pass through a single interface.
+3. We have audit logs documenting authorization decisions.
+4. Authorization becomes standardized.
 
 ## Context
-*What are our competitors doing, what are the technical constraints, what are customers asking for, what does the data tell us, are there external motivations (e.g. launch week, enterprise contract)?*
 
 ### Customer context
 
@@ -71,25 +80,27 @@ Customers keep asking for new access control features that we are unable or too 
 
 Modern authorization architecture is typically divided into two components: a Policy Evaluation Point (PEP), and a Policy Decision Point (PDP). The PDP is responsible for answering the question "Can the user do this action?", whereas the PEP is responsible for enforcing the resolved access for the user.
 
-For example, a viewset which returns `Dashboards` would be a PEP. The viewset would ask the PDP if the authenticated user can perform the API action. The PDP returns a boolean response, yes or no, and if denied the PEP is responsible for responding with the correct HTTP response.
+For example, a viewset which returns `Dashboards` would be a PEP. The viewset would ask the PDP if the authenticated user can perform the API action. The PDP returns a boolean response, yes or no, and if denied, the PEP is responsible for terminating the request and responding with the correct HTTP response.
 
-This decoupled architecture improves scalability, because changes to the access control rules are contained to the PDP. The PEP treats the PDP as a black box, which reduces the blast radius of access control logic changes. Additionally, modern authorization systems rely on domain specific languages (DSLs) and specialized data structures to model access control rules. This imposes a design constraint that forces developers to model access control as formal logic rather than application code.
+This decoupled architecture improves scalability, because changes to the access control rules are contained to the PDP. The PEP treats the PDP as a black box, which reduces the blast radius of access control logic changes. Additionally, modern authorization systems rely on domain specific languages (DSLs) and specialized data structures to model access control rules. This imposes a design constraint that forces developers to model access control as concise formal logic rather than application code.
 
 See [ABAC](https://en.wikipedia.org/wiki/Attribute-based_access_control) and [Cedar](https://docs.cedarpolicy.com/) for further reading on this architecture.
 
 ### ReBAC
 
-ReBAC solves the problem of access control by modeling access as a graph. A user can perform an action on an object if they have a relation, direct or indirect, to that object. This is a natural fit for us, because we already model access control in a highly relational way. Our access control model is already largely expressed through relationships, so formalizing as a graph and centralizing the logic is not a big conceptual leap.
+ReBAC solves the problem of access control by modeling access as a graph. A user can perform an action on an object if they have a relation, direct or indirect, to that object. This is a natural fit for us, because we already model access control through relations.
+
+For example, a user can edit a dashboard if they are a project admin, or they are an editor for dashboards, or they have edit permissions for that specific dashboard. In this example, the user's access to edit the dashboard is defined by their relationships to the dashboard and the project.
 
 ### Implementations
 
-[Zanzibar](https://storage.googleapis.com/gweb-research2023-media/pubtools/5068.pdf) is Google's in-house ReBAC implementation. It is used across hundreds of their products, including popular consumer-centric products like Google Docs. Zanzibar is the primary source of inspiration for nearly all modern ReBAC implementations.
+[Zanzibar](https://storage.googleapis.com/gweb-research2023-media/pubtools/5068.pdf) is Google's in-house ReBAC implementation. It is used across hundreds of their products, including popular products like Google Docs. Zanzibar is the primary source of inspiration for nearly all modern ReBAC implementations.
 
 [OpenFGA](https://openfga.dev/) is a ReBAC implementation that is a CNCF incubation project, maintained by Okta and Grafana. It seems to be the most popular ReBAC implementation right now due to its cloud-native approach.
 
 [SpiceDB](https://authzed.com/spicedb) is an authorization database with support for ReBAC configuration. It is [open source](https://github.com/authzed/spicedb), under the Apache 2.0 License, and maintained by [AuthZed](https://authzed.com) who sell authorization as a service.
 
-[Permify](https://permify.co/) is an open source ReBAC implementation that, like OpenFGA, aims to be cloud-native. Though, they are increasingly focused on their managed cloud product, and the self-hosted option appears to receive limited support.
+[Permify](https://permify.co/) is an [open source](https://github.com/Permify/permify) ReBAC implementation that, like OpenFGA, aims to be cloud-native. It is  licensed under the APGL-3 license and maintained by [FusionAuth](https://fusionauth.io/) who sell authorization as a service.
 
 ### Pros & Cons
 
@@ -98,15 +109,15 @@ ReBAC solves the problem of access control by modeling access as a graph. A user
 - *Centralized logic* - All logic is colocated in one place, making it easier to maintain.
 - *Audit logs* - With all authorization requests routed through a single interface, we can log authorization decisions for security review.
 - *Simplified API* - Clients are less aware of the access control implementation and can be thinner, which will help with maintainability.
-- *Formalized rules* - Rules are separated from code, and written down to make it easier to reason, develop, and maintain.
+- *Formalized rules* - Rules are separated from code, and written down to make it easier to reason about, develop, and maintain.
 - *More authorization surfaces* - Access control can be used for more use cases such as tenant isolation, plan entitlements, sharing, contextual policies.
-- *Own the rules, not the engine* - We own the rules that determine authorization, not the nitty-gritty code that iterates over DB rows and figures out how to turn that into an authorization decision.
+- *Own the rules, not the engine* - We own the rules that determine authorization, not the infrastructure code that iterates over DB rows and figures out how to turn that into an authorization decision.
 
 **Cons**
 
 - *More complex architecture* - Requires an additional service deployed to the cluster, with its own data store.
-- *Potential for higher latency* - Possible that there are more network requests, or that the graph structure has computational overhead.
-- *ReBAC graph could become inconsistent with DB state* - We need to make sure CRUD operations to DB objects are synchronized with ReBAC graph, and we need to develop tools to respond to incidents where ReBAC graph state drifts and becomes inconsistent with DB.
+- *Potential for higher latency* - It is possible that there is more network or computational overhead for each authorization request.
+- *ReBAC graph could become inconsistent with DB state* - We need to make sure CRUD operations to DB objects are synchronized with the ReBAC graph, and we need to develop tools to respond to potential incidents where ReBAC graph state drifts and becomes inconsistent with the DB.
 
 ## Design 
 *What are the key user experience and technical design decisions / trade-offs?*
@@ -298,14 +309,12 @@ access_control.write(
 
 ### Gotcha: Django-isms
 
-The mega-brained reader will know that the python API is only half the battle. There is a whole load of access control enforcement which happens through Django-land. With only the new Python API, downstream code would need to implement lots of one-off authorization checks for the automatic CRUD operations that Django gives us. To solve for this, we will re-implement the many Django permission enforcement and utility classes to use the new Python API under the hood, instead of directly evaluating access control rules from the database.
+The mega-brained reader will know that there is a lot of access control checks and enforcement which happens in Django-land. With the new Python API we will re-implement the many Django permission enforcement and utility classes to use the new Python API under the hood, instead of directly evaluating access control rules from the database.
 
-For example, `TeamMemberAccessPermission` could be updated to check: `access_control.check(subject=f"user:{user.pk}", resource=f"project:{project.pk}", action="view")`
+For example, `AccessControlViewSetMixin` would need to be updated to use the new python API instead of implementing the access control checks directly.
 
 ### Gotcha: list operations
-List operations introduce an additional challenge because our existing access control system enforces object-level restrictions directly in the queryset, meaning unauthorized objects are omitted from results entirely. Some queries are easy to migrate, only filtering objects that match a list of specific ids, whereas others are more complicated, joining on access control tables.
-
-We need to be careful to maintain this pre-existing behavior while migrating. This should be possible using some trickery with `access_control.list_resources(...)` to return the set of explicitly allowed objects when the user doesn't have access to list the resource, or to return the set of explicitly denied objects when they do have access to list the resource. This is how it is implemented now, but some extra engineering effort might need to go into this edge case.
+List operations introduce an additional challenge because our existing access control system enforces object-level restrictions directly in the queryset. This means unauthorized objects are omitted from list results entirely. We will need to be careful to maintain this pre-existing behavior while migrating. Some queries are easy to migrate, only filtering objects that match a list of specific ids, whereas others are more complicated, joining on access control tables.
 
 ### Why now?
 
