@@ -38,7 +38,7 @@ For example, in PostHog AI `Tasks` are visible to the creating user and hidden t
 
 ### Multiple access control systems
 
-As our access control model has been unable to adapt to new use-cases, multiple systems have taken shape. For example, the previously mentioned PostHog AI `Tasks` have received their own access control implementation. However, the issue is more systemic
+As our access control model has been unable to adapt to new use-cases, multiple systems have taken shape. For example, the previously mentioned PostHog AI `Tasks` have received their own access control implementation. However, the issue is more systemic.
 
 Sharing has its own system, which has grown increasingly complex and nearly impossible to work with for large product surfaces like notebooks.
 
@@ -73,7 +73,7 @@ Modern authorization architecture is typically divided into two components: a Po
 
 For example, a viewset which returns `Dashboards` would be a PEP. The viewset would ask the PDP if the authenticated user can perform the API action. The PDP returns a boolean response, yes or no, and if denied the PEP is responsible for responding with the correct HTTP response.
 
-This decoupled architecture improves scalability, because changes to the access control rules are contained to the PEP. The PEP treats the PDP as a black box, which reduces the blast radius of access control logic changes. Additionally, modern authorization systems rely on domain specific languages (DSLs) and specialized data structures to model access control rules. This imposes a design constraint that forces developers to model access control as formal logic rather than application code.
+This decoupled architecture improves scalability, because changes to the access control rules are contained to the PDP. The PEP treats the PDP as a black box, which reduces the blast radius of access control logic changes. Additionally, modern authorization systems rely on domain specific languages (DSLs) and specialized data structures to model access control rules. This imposes a design constraint that forces developers to model access control as formal logic rather than application code.
 
 See [ABAC](https://en.wikipedia.org/wiki/Attribute-based_access_control) and [Cedar](https://docs.cedarpolicy.com/) for further reading on this architecture.
 
@@ -89,7 +89,7 @@ ReBAC solves the problem of access control by modeling access as a graph. A user
 
 [SpiceDB](https://authzed.com/spicedb) is an authorization database with support for ReBAC configuration. It is [open source](https://github.com/authzed/spicedb), under the Apache 2.0 License, and maintained by [AuthZed](https://authzed.com) who sell authorization as a service.
 
-[Permify](https://permify.co/) is an open source ReBAC implementation that, like OpenFGA, aims to be cloud-native. Though, they are increasingly focused on their managed cloud product, and the self-hosted option appears to received limited support.
+[Permify](https://permify.co/) is an open source ReBAC implementation that, like OpenFGA, aims to be cloud-native. Though, they are increasingly focused on their managed cloud product, and the self-hosted option appears to receive limited support.
 
 ### Pros & Cons
 
@@ -97,9 +97,10 @@ ReBAC solves the problem of access control by modeling access as a graph. A user
 
 - *Centralized logic* - All logic is colocated in one place, making it easier to maintain.
 - *Audit logs* - With all authorization requests routed through a single interface, we can log authorization decisions for security review.
-- *Simplified API* - Clients are less aware of the access control implementation and can be thinner, which will hel pwith maintainability.
+- *Simplified API* - Clients are less aware of the access control implementation and can be thinner, which will help with maintainability.
 - *Formalized rules* - Rules are separated from code, and written down to make it easier to reason, develop, and maintain.
 - *More authorization surfaces* - Access control can be used for more use cases such as tenant isolation, plan entitlements, sharing, contextual policies.
+- *Own the rules, not the engine* - We own the rules that determine authorization, not the nitty-gritty code that iterates over DB rows and figures out how to turn that into an authorization decision.
 
 **Cons**
 
@@ -114,7 +115,7 @@ We will adopt a ReBAC framework, then expose a minimal Python API for clients to
 
 ### Python API
 
-I propose the following simple python API. This python API should be exposed from the `products/access_control` product folder, and be the only way that access control checks are performed by application code outside of `products/access_control`.
+I propose the following approximate python API. This python API should be exposed from the `products/access_control` product folder, and be the only way that access control checks are performed by application code outside of `products/access_control`.
 
 ```python
 from products.access_control.backend.facade import access_control
@@ -122,7 +123,7 @@ from products.access_control.backend.facade import access_control
 # Check if a user can perform an action on a resource
 can_access = access_control.check(subject=..., resource=..., action=...)
 
-# Same as `access_control.check(...), but performs multiple checks in bulk
+# Same as `access_control.check(...)`, but performs multiple checks in bulk
 can_access = access_control.check(
     [
         access_control.CheckRequest(subject=..., resource=..., action=...),
@@ -134,10 +135,10 @@ can_access = access_control.check(
 permissions = access_control.permissions(subject=..., resource=...)
 
 # Enumerate resources a user can access
-accessible_resources = access_control.list_resources(subject=..., resource_type=..., action=...)
+accessible_resources = access_control.list_resources(subject=..., resource=..., action=...)
 
 # Enumerate users who can access a resource
-authorized_users = access_control.list_subjects(resource=..., action=..., subject_type=...)
+authorized_users = access_control.list_subjects(resource=..., action=..., subject=...)
 
 # Generic utility for upserting and deleting relationships in bulk
 access_control.write(
@@ -162,74 +163,135 @@ access_control.dangerous_explain(access_control.CheckRequest())
 from products.access_control.backend.facade import access_control
 
 # check if user can access dashboard
-can_access = access_control.check(subject=f"user:{user.pk}", resource=f"dashboard:{other_dashboard.pk}", action="edit")
+can_access = access_control.check(
+    subject=access_control.Subject(user_id=user.pk), # ex: "user:{user.pk}"
+    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk), # ex: "dashboard:{dashboard.pk}"
+    action=access_control.Action.Edit,
+)
 assert can_access is False
 
 # grant user read and write access to dashboard
 access_control.write(
     [
-        access_control.AddRelationshipRequest(subject=f"user:{user.pk}", resource=f"dashboard:{dashboard.pk}", action="view"),
-        access_control.AddRelationshipRequest(subject=f"user:{user.pk}", resource=f"dashboard:{dashboard.pk}", action="edit"),
+        access_control.AddRelationshipRequest(
+            subject=access_control.Subject(user_id=user.pk),
+            resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk),
+            action=access_control.Action.View,
+        ),
+        access_control.AddRelationshipRequest(
+            subject=access_control.Subject(user_id=user.pk),
+            resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk),
+            action=access_control.Action.Edit,
+        ),
     ]
 )
 
 # check if user can access dashboard
-can_access = access_control.check(subject=f"user:{user.pk}", resource=f"dashboard:{other_dashboard.pk}", action="edit")
+can_access = access_control.check(
+    subject=access_control.Subject(user_id=user.pk),
+    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk),
+    action=access_control.Action.Edit,
+)
 assert can_access is True
 
 # remove user's edit access from the dashboard
 access_control.write(
-    access_control.DeleteRelationshipRequest(subject=f"user:{user.pk}", resource=f"dashboard:{dashboard.pk}", action="edit"),
+    access_control.DeleteRelationshipRequest(
+        subject=access_control.Subject(user_id=user.pk),
+        resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk),
+        action=access_control.Action.Edit,
+    ),
 )
 
 # let user's list all dashboards in their project
 access_control.write(
     [
-        # note that `dashboards` != `dashboard`. `dashboard` is for individual objects, `dashboards` is for collection operations
-        # In ReBAC we can define rules so that a user is automatically given access to `dashboard:{dashboard.pk}` if they have access to `dashboards:{project_id}`
-        access_control.AddRelationshipRequest(subject=f"user:{user.pk}", resource=f"dashboards:{project_id}", action="list"),
+        access_control.AddRelationshipRequest(
+            subject=access_control.Subject(user_id=user.pk),
+            resource=access_control.Resource(type=access_control.ResourceType.Dashboard, project_id=project.pk), # ex: "project:{project.pk}:dashboard"
+            action=access_control.Action.List,
+        ),
     ]
 )
 
 # check if a user can list dashboards
-can_access = access_control.check(subject=f"user:{user.pk}", resource=f"dashboards:{project_id}", action="list")
+can_access = access_control.check(
+    subject=access_control.Subject(user_id=user.pk),
+    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, project_id=project.pk),
+    action=access_control.Action.List,
+)
 assert can_access is True
 
 # check if a user can create dashboards
-can_access = access_control.check(subject=f"user:{user.pk}", resource=f"dashboards:{project_id}", action="create")
+can_access = access_control.check(
+    subject=access_control.Subject(user_id=user.pk),
+    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, project_id=project.pk),
+    action=access_control.Action.Create,
+)
 assert can_access is False
 
 # check if a user can view a dashboard that they have not been explicitly given access to
-can_access = access_control.check(subject=f"user:{user.pk}", resource=f"dashboard:{other_dashboard.pk}", action="view")
+can_access = access_control.check(
+    subject=access_control.Subject(user_id=user.pk),
+    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=other_dashboard.pk),
+    action=access_control.Action.View,
+)
 assert can_access is True
 
 # check if a user can access a bunch of different dashboards
 dashboards = [dashboard, other_dashboard_1, other_dashboard_2]
 can_access = access_control.check(
     [
-        access_control.CheckRequest(subject=f"user:{user.pk}", resource=f"dashboard:{dashboards[0].pk}", action="view"),
-        access_control.CheckRequest(subject=f"user:{user.pk}", resource=f"dashboard:{dashboards[1].pk}", action="view"),
-        access_control.CheckRequest(subject=f"user:{user.pk}", resource=f"dashboard:{dashboards[2].pk}", action="view"),
+        access_control.CheckRequest(
+            subject=access_control.Subject(user_id=user.pk),
+            resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboards[0].pk),
+            action=access_control.Action.View,
+        ),
+        access_control.CheckRequest(
+            subject=access_control.Subject(user_id=user.pk),
+            resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboards[1].pk),
+            action=access_control.Action.View,
+        ),
+        access_control.CheckRequest(
+            subject=access_control.Subject(user_id=user.pk),
+            resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboards[2].pk),
+            action=access_control.Action.View,
+        ),
     ]
 )
 assert can_access == [True, False, False]
 
 # see what a user can do for a particular dashboard
-permissions = access_control.permissions(subject=f"user:{user.pk}", resource=f"dashboard:{dashboards[0].pk}")
-assert permissions == ["view"]
+permissions = access_control.permissions(
+    subject=access_control.Subject(user_id=user.pk),
+    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk),
+)
+assert permissions == [access_control.Action.View]
 
 # see what dashboards a user can access
-resources = access_control.list_resources(subject=f"user:{user.pk}", resource_type=f"dashboard", action="view")
-assert resources == [f"dashboard:{dashboard.pk}"]
+resources = access_control.list_resources(
+    subject=access_control.Subject(user_id=user.pk),
+    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, project_id=project.pk),
+    action=access_control.Action.View,
+)
+assert resources == [access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk)]
 
 # see who can access a dashboard
-subjects = access_control.list_subjects(subject_type="user", resource=f"dashboard:{dashboard.pk}", action="view")
+subjects = access_control.list_subjects(
+    subject=access_control.Subject(type=access_control.SubjectType.User),
+    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk),
+    action=access_control.Action.View,
+)
+assert subjects == [access_control.Subject(user_id=user.pk)]
 
 # Bring together role-based access control, data warehouse table access control, and relationship based access control into one beautiful access control graph
 access_control.write(
     [
-        access_control.AddRelationshipRequest(subject="role:worldcom_auditors", resource=f"data_warehouse_table:{project_id}:postgres.stripe_invoices", action="view"),
-        access_control.AddRelationshipRequest(subject="role:worldcom_accountants", resource=f"data_warehouse_table:{project_id}:postgres.stripe_invoices", action="edit"),
+        access_control.AddRelationshipRequest(
+            subject=access_control.Subject(role=role, project_id=project.pk), # ex: "project:{project.pk}:role:{role.pk}"
+            resource=DataWarehouseTableResource(project_id=project.pk, table="postgres.stripe_invoices"), # ex: "project:{project.pk}:data_warehouse_table:postgres.stripe_invoices"
+            action=access_control.Action.View,
+        ),
     ]
 )
 ```
@@ -238,7 +300,7 @@ access_control.write(
 
 The mega-brained reader will know that the python API is only half the battle. There is a whole load of access control enforcement which happens through Django-land. With only the new Python API, downstream code would need to implement lots of one-off authorization checks for the automatic CRUD operations that Django gives us. To solve for this, we will re-implement the many Django permission enforcement and utility classes to use the new Python API under the hood, instead of directly evaluating access control rules from the database.
 
-For example, `TeamMemberAccessPermission` could be updated to check: `access_control.check(subject=f"user:{user.pk}", resource=f"project:{project_id}", action="view")`
+For example, `TeamMemberAccessPermission` could be updated to check: `access_control.check(subject=f"user:{user.pk}", resource=f"project:{project.pk}", action="view")`
 
 ### Gotcha: list operations
 List operations introduce an additional challenge because our existing access control system enforces object-level restrictions directly in the queryset, meaning unauthorized objects are omitted from results entirely. Some queries are easy to migrate, only filtering objects that match a list of specific ids, whereas others are more complicated, joining on access control tables.
@@ -250,15 +312,20 @@ The python API will control rollout of ReBAC backed access control. Initially, w
 
 ### What about the data model?
 
-Until we have a reason to replace the existing data model, we will avoid doing so. In any implementation, we need a source of truth for access control policies. All that changes is these polcies are replicated into the ReBAC engine.
+Until we have a reason to replace the existing data model, we will avoid doing so. In any implementation, we need a source of truth for access control policies. All that changes is these policies are replicated into the ReBAC engine.
 
 ### Why not use ABAC?
 
 We already have lots of hierarchy in our rules: project admin overrides, creator escape hatch, object-level overrides, roles, etc. that are all dependent on their relationships between each other. ABAC is better suited for flat access control structures that are dependent on inline object attributes. For us, ReBAC is a better fit since it directly models relations.
 
+### Why not build this ourselves?
+
+1. Code examples on the internet makes it easier for LLMs to use.
+2. We want to own the rules, not the entire vertical slice of code that turns rules into authorization decisions.
+
 ### Most specific access control?
 
-We will block on most-specific access control being shipped. Maintaining two big access control changes at once would be difficult.
+We will block this initiative on most-specific access control being shipped. Maintaining two big access control changes at once would be too difficult.
 
 ### New vendor?
 
@@ -266,19 +333,11 @@ No, I think we should avoid this, and remain cloud-native since this is core inf
 
 ## Sprints
 
-1. Research options, benchmark them, and select final option
+1. Research ReBAC frameworks, benchmark them, and select final option
 2. Implement python control API using existing access control code
 3. Implement access control decision logging
-3. Setup ReBAC infra in prod, update local dev stack, update self-hosted stuff
-4. Implement ReBAC backed access control behind a feature flag, add ReBAC decisions to access control logging
-5. Verify existing access control and ReBAC access control agree on authorization decisions
-6. Begin phased rollout of ReBAC
-7. Remove old access control logic and make new ReBAC approach source of truth
-
-## Open questions
-
-**What ReBAC engine should we choose?**
-
-I propose either [OpenFGA](https://openfga.dev/) or [SpiceDB](https://authzed.com/spicedb). Both are mature, open source, cloud native, and have big logos using them. I think there are two blockers in making a decision:
-1. We should build PoCs to verify both will work for our use case, and identify any hidden gotchas before going hog wild.
-2. Because this introduces a new piece of infrastructure complexity, we should choose whichever the infrastructure team is most comfortable operating.
+4. Set up ReBAC infra in prod, update local dev stack, update self-hosted stuff
+5. Implement ReBAC backed access control behind a feature flag, add ReBAC decisions to access control logging
+6. Verify existing access control and ReBAC access control agree on authorization decisions
+7. Begin phased rollout of ReBAC
+8. Remove old access control logic and make new ReBAC approach source of truth
