@@ -307,21 +307,31 @@ List operations introduce an additional challenge because our existing access co
 
 We need to be careful to maintain this pre-existing behavior while migrating. This should be possible using some trickery with `access_control.list_resources(...)` to return the set of explicitly allowed objects when the user doesn't have access to list the resource, or to return the set of explicitly denied objects when they do have access to list the resource. This is how it is implemented now, but some extra engineering effort might need to go into this edge case.
 
+### Why now?
+
+As we've scaled up the access coverage over more products, the data warehouse, properties, and new AI products, the current access control model has not scaled well. It has slowed down development, polluted some business logic with authorization code, and become difficult to reason about.
+
+### Alternatives considered
+
+**ABAC**
+
+We already have lots of hierarchy in our rules: project admin overrides, creator escape hatch, object-level overrides, roles, etc. that are all dependent on their relationships between each other. ABAC is better suited for flat access control structures that are dependent on inline object attributes. For us, ReBAC is a better fit since it directly models relations.
+
+**Move existing code behind new Python API, but don't adopt ReBAC**
+
+In this case, we are still spending a lot of time maintaining the code which evaluates the access control rules. Each new use case requires lots of new Python code that intermixes different concerns and is dificult to refactor.
+
+**Build the ReBAC engine ourselves**
+
+If we adopt a standard ReBAC engine, then code examples on the internet makes it easier for LLMs to use. Additionally,
+we want to spend the bulk of our development effort on the authorization rules, not the plumbing that enables that.
+
 ### Rollout?
 The python API will control rollout of ReBAC backed access control. Initially, we will port the existing access control code into the access control product folder, and expose it through the new python API. Then, once we start implementing it to be backed by ReBAC, we will set up a flag that determines whether the legacy access control code or the new ReBAC model should be used for authorization evaluation.
 
 ### What about the data model?
 
 Until we have a reason to replace the existing data model, we will avoid doing so. In any implementation, we need a source of truth for access control policies. All that changes is these policies are replicated into the ReBAC engine.
-
-### Why not use ABAC?
-
-We already have lots of hierarchy in our rules: project admin overrides, creator escape hatch, object-level overrides, roles, etc. that are all dependent on their relationships between each other. ABAC is better suited for flat access control structures that are dependent on inline object attributes. For us, ReBAC is a better fit since it directly models relations.
-
-### Why not build this ourselves?
-
-1. Code examples on the internet makes it easier for LLMs to use.
-2. We want to own the rules, not the entire vertical slice of code that turns rules into authorization decisions.
 
 ### Most specific access control?
 
