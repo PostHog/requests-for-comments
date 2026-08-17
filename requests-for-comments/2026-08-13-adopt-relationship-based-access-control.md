@@ -83,13 +83,13 @@ ReBAC solves the problem of access control by modeling access as a graph. A user
 
 ### Implementations
 
-Google uses [Zanzibar, their in-house ReBAC implementation](https://storage.googleapis.com/gweb-research2023-media/pubtools/5068.pdf) to implement access control in many of their products. Zanzibar is the source of inspiration for nearly all modern ReBAC implementations
+[Zanzibar](https://storage.googleapis.com/gweb-research2023-media/pubtools/5068.pdf) is Google's in-house ReBAC implementation. It is used across hundreds of their products, including popular consumer-centric products like Google Docs. Zanzibar is the primary source of inspiration for nearly all modern ReBAC implementations.
 
-[OpenFGA](https://openfga.dev/) is a ReBAC implementation that is a CNCF incubation project. It seems to be the most popular ReBAC implementation right now due to its cloud-native approach. It is backed by Okta, and has lots of logos on the website. There is extensive documentation and talks about OpenFGA available.
+[OpenFGA](https://openfga.dev/) is a ReBAC implementation that is a CNCF incubation project, maintained by Okta and Grafana. It seems to be the most popular ReBAC implementation right now due to its cloud-native approach.
 
 [SpiceDB](https://authzed.com/spicedb) is an authorization database with support for ReBAC configuration. It is [open source](https://github.com/authzed/spicedb), under the Apache 2.0 License, and maintained by [AuthZed](https://authzed.com) who sell authorization as a service.
 
-[Permify](https://permify.co/) is another ReBAC implementation that is open source. Like OpenFGA, it supports arbitrary data backends for storing the relationship graph.
+[Permify](https://permify.co/) is an open source ReBAC implementation that, like OpenFGA, aims to be cloud-native. Though, they are increasingly focused on their managed cloud product, and the self-hosted option appears to received limited support.
 
 ### Pros & Cons
 
