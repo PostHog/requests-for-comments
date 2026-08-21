@@ -84,7 +84,7 @@ For example, a viewset which returns `Dashboards` would be a PEP. The viewset wo
 
 This decoupled architecture improves scalability, because changes to the access control rules are contained to the PDP. The PEP treats the PDP as a black box, which reduces the blast radius of access control logic changes. Additionally, modern authorization systems rely on domain specific languages (DSLs) and specialized data structures to model access control rules. This imposes a design constraint that forces developers to model access control as concise formal logic rather than application code.
 
-See [ABAC](https://en.wikipedia.org/wiki/Attribute-based_access_control) and [Cedar](https://docs.cedarpolicy.com/) for further reading on this architecture.
+See [ABAC](https://en.wikipedia.org/wiki/Attribute-based_authorization) and [Cedar](https://docs.cedarpolicy.com/) for further reading on this architecture.
 
 ### ReBAC
 
@@ -108,7 +108,7 @@ For example, a user can edit a dashboard if they are a project admin, or they ar
 
 - *Centralized logic* - All logic is colocated in one place, making it easier to maintain.
 - *Audit logs* - With all authorization requests routed through a single interface, we can log authorization decisions for security review.
-- *Simplified API* - Clients are less aware of the access control implementation and can be thinner, which will help with maintainability.
+- *Simplified SDK* - Clients are less aware of the access control implementation and can be thinner, which will help with maintainability.
 - *Formalized rules* - Rules are separated from code, and written down to make it easier to reason about, develop, and maintain.
 - *More authorization surfaces* - Access control can be used for more use cases such as tenant isolation, plan entitlements, sharing, contextual policies.
 - *Own the rules, not the engine* - We own the rules that determine authorization, not the infrastructure code that iterates over DB rows and figures out how to turn that into an authorization decision.
@@ -122,186 +122,186 @@ For example, a user can edit a dashboard if they are a project admin, or they ar
 ## Design 
 *What are the key user experience and technical design decisions / trade-offs?*
 
-We will adopt a ReBAC framework, then expose a minimal Python API for clients to perform authorization checks. In this case the python API will act as the PDP, and clients will act as the PEP.
+We will adopt a ReBAC framework, then expose a minimal Python SDK for clients to perform authorization checks. In this case the python SDK will act as the PDP, and clients will act as the PEP.
 
-### Python API
+### Python SDK
 
-I propose the following approximate python API. This python API should be exposed from the `products/access_control` product folder, and be the only way that access control checks are performed by application code outside of `products/access_control`.
+I propose the following approximate Python SDK.
 
 ```python
-from products.access_control.backend.facade import access_control
+from posthog import authorization
 
 # Check if a user can perform an action on a resource
-can_access = access_control.check(subject=..., resource=..., action=...)
+can_access = authorization.check(subject=..., resource=..., action=...)
 
-# Same as `access_control.check(...)`, but performs multiple checks in bulk
-can_access = access_control.check(
+# Same as `authorization.check(...)`, but performs multiple checks in bulk
+can_access = authorization.check(
     [
-        access_control.CheckRequest(subject=..., resource=..., action=...),
-        access_control.CheckRequest(subject=..., resource=..., action=...),
+        authorization.CheckRequest(subject=..., resource=..., action=...),
+        authorization.CheckRequest(subject=..., resource=..., action=...),
     ]
 )
 
 # Enumerate a user's permissions for a resource
-permissions = access_control.permissions(subject=..., resource=...)
+permissions = authorization.permissions(subject=..., resource=...)
 
 # Enumerate resources a user can access
-accessible_resources = access_control.list_resources(subject=..., resource=..., action=...)
+accessible_resources = authorization.list_resources(subject=..., resource=..., action=...)
 
 # Enumerate users who can access a resource
-authorized_users = access_control.list_subjects(resource=..., action=..., subject=...)
+authorized_users = authorization.list_subjects(resource=..., action=..., subject=...)
 
 # Generic utility for upserting and deleting relationships in bulk
-access_control.write(
+authorization.write(
     [
-        access_control.AddRelationshipRequest(subject=..., resource=..., action=...),
-        access_control.DeleteRelationshipRequest(subject=..., resource=..., action=...),
+        authorization.AddRelationshipRequest(subject=..., resource=..., action=...),
+        authorization.DeleteRelationshipRequest(subject=..., resource=..., action=...),
     ]
 )
 
 # Special function to inspect the graph. Returns the existence of the (subject, resource, action) tuple in the graph, NOT whether the user has access
 # Should only be used by APIs that explicitly need to check for specific relations like sharing UIs, for example.
 # Prefixed with `dangerous_` to avoid accidental use
-access_control.dangerous_query_relation(subject=..., resource=..., action=...)
+authorization.dangerous_query_relation(subject=..., resource=..., action=...)
 
 # Debug function for PostHog admins. If decision is to allow, returns context for what relations were involved in that decision being made.
-access_control.dangerous_explain(access_control.CheckRequest())
+authorization.dangerous_explain(authorization.CheckRequest())
 ```
 
-**For example, here are what some common access control operations might look like using this API.**
+**For example, here are what some common access control operations might look like using this SDK.**
 
 ```python
-from products.access_control.backend.facade import access_control
+from posthog import authorization
 
 # check if user can access dashboard
-can_access = access_control.check(
-    subject=access_control.Subject(user_id=user.pk), # ex: "user:{user.pk}"
-    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk), # ex: "dashboard:{dashboard.pk}"
-    action=access_control.Action.Edit,
+can_access = authorization.check(
+    subject=authorization.Subject(user_id=user.pk), # ex: "user:{user.pk}"
+    resource=authorization.Resource(type=authorization.ResourceType.Dashboard, id=dashboard.pk), # ex: "dashboard:{dashboard.pk}"
+    action=authorization.Action.Edit,
 )
 assert can_access is False
 
 # grant user read and write access to dashboard
-access_control.write(
+authorization.write(
     [
-        access_control.AddRelationshipRequest(
-            subject=access_control.Subject(user_id=user.pk),
-            resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk),
-            action=access_control.Action.View,
+        authorization.AddRelationshipRequest(
+            subject=authorization.Subject(user_id=user.pk),
+            resource=authorization.Resource(type=authorization.ResourceType.Dashboard, id=dashboard.pk),
+            action=authorization.Action.View,
         ),
-        access_control.AddRelationshipRequest(
-            subject=access_control.Subject(user_id=user.pk),
-            resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk),
-            action=access_control.Action.Edit,
+        authorization.AddRelationshipRequest(
+            subject=authorization.Subject(user_id=user.pk),
+            resource=authorization.Resource(type=authorization.ResourceType.Dashboard, id=dashboard.pk),
+            action=authorization.Action.Edit,
         ),
     ]
 )
 
 # check if user can access dashboard
-can_access = access_control.check(
-    subject=access_control.Subject(user_id=user.pk),
-    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk),
-    action=access_control.Action.Edit,
+can_access = authorization.check(
+    subject=authorization.Subject(user_id=user.pk),
+    resource=authorization.Resource(type=authorization.ResourceType.Dashboard, id=dashboard.pk),
+    action=authorization.Action.Edit,
 )
 assert can_access is True
 
 # remove user's edit access from the dashboard
-access_control.write(
-    access_control.DeleteRelationshipRequest(
-        subject=access_control.Subject(user_id=user.pk),
-        resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk),
-        action=access_control.Action.Edit,
+authorization.write(
+    authorization.DeleteRelationshipRequest(
+        subject=authorization.Subject(user_id=user.pk),
+        resource=authorization.Resource(type=authorization.ResourceType.Dashboard, id=dashboard.pk),
+        action=authorization.Action.Edit,
     ),
 )
 
 # let user's list all dashboards in their project
-access_control.write(
+authorization.write(
     [
-        access_control.AddRelationshipRequest(
-            subject=access_control.Subject(user_id=user.pk),
-            resource=access_control.Resource(type=access_control.ResourceType.Dashboard, project_id=project.pk), # ex: "project:{project.pk}:dashboard"
-            action=access_control.Action.List,
+        authorization.AddRelationshipRequest(
+            subject=authorization.Subject(user_id=user.pk),
+            resource=authorization.Resource(type=authorization.ResourceType.Dashboard, project_id=project.pk), # ex: "project:{project.pk}:dashboard"
+            action=authorization.Action.List,
         ),
     ]
 )
 
 # check if a user can list dashboards
-can_access = access_control.check(
-    subject=access_control.Subject(user_id=user.pk),
-    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, project_id=project.pk),
-    action=access_control.Action.List,
+can_access = authorization.check(
+    subject=authorization.Subject(user_id=user.pk),
+    resource=authorization.Resource(type=authorization.ResourceType.Dashboard, project_id=project.pk),
+    action=authorization.Action.List,
 )
 assert can_access is True
 
 # check if a user can create dashboards
-can_access = access_control.check(
-    subject=access_control.Subject(user_id=user.pk),
-    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, project_id=project.pk),
-    action=access_control.Action.Create,
+can_access = authorization.check(
+    subject=authorization.Subject(user_id=user.pk),
+    resource=authorization.Resource(type=authorization.ResourceType.Dashboard, project_id=project.pk),
+    action=authorization.Action.Create,
 )
 assert can_access is False
 
 # check if a user can view a dashboard that they have not been explicitly given access to
-can_access = access_control.check(
-    subject=access_control.Subject(user_id=user.pk),
-    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=other_dashboard.pk),
-    action=access_control.Action.View,
+can_access = authorization.check(
+    subject=authorization.Subject(user_id=user.pk),
+    resource=authorization.Resource(type=authorization.ResourceType.Dashboard, id=other_dashboard.pk),
+    action=authorization.Action.View,
 )
 assert can_access is True
 
 # check if a user can access a bunch of different dashboards
 dashboards = [dashboard, other_dashboard_1, other_dashboard_2]
-can_access = access_control.check(
+can_access = authorization.check(
     [
-        access_control.CheckRequest(
-            subject=access_control.Subject(user_id=user.pk),
-            resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboards[0].pk),
-            action=access_control.Action.View,
+        authorization.CheckRequest(
+            subject=authorization.Subject(user_id=user.pk),
+            resource=authorization.Resource(type=authorization.ResourceType.Dashboard, id=dashboards[0].pk),
+            action=authorization.Action.View,
         ),
-        access_control.CheckRequest(
-            subject=access_control.Subject(user_id=user.pk),
-            resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboards[1].pk),
-            action=access_control.Action.View,
+        authorization.CheckRequest(
+            subject=authorization.Subject(user_id=user.pk),
+            resource=authorization.Resource(type=authorization.ResourceType.Dashboard, id=dashboards[1].pk),
+            action=authorization.Action.View,
         ),
-        access_control.CheckRequest(
-            subject=access_control.Subject(user_id=user.pk),
-            resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboards[2].pk),
-            action=access_control.Action.View,
+        authorization.CheckRequest(
+            subject=authorization.Subject(user_id=user.pk),
+            resource=authorization.Resource(type=authorization.ResourceType.Dashboard, id=dashboards[2].pk),
+            action=authorization.Action.View,
         ),
     ]
 )
 assert can_access == [True, False, False]
 
 # see what a user can do for a particular dashboard
-permissions = access_control.permissions(
-    subject=access_control.Subject(user_id=user.pk),
-    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk),
+permissions = authorization.permissions(
+    subject=authorization.Subject(user_id=user.pk),
+    resource=authorization.Resource(type=authorization.ResourceType.Dashboard, id=dashboard.pk),
 )
-assert permissions == [access_control.Action.View]
+assert permissions == [authorization.Action.View]
 
 # see what dashboards a user can access
-resources = access_control.list_resources(
-    subject=access_control.Subject(user_id=user.pk),
-    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, project_id=project.pk),
-    action=access_control.Action.View,
+resources = authorization.list_resources(
+    subject=authorization.Subject(user_id=user.pk),
+    resource=authorization.Resource(type=authorization.ResourceType.Dashboard, project_id=project.pk),
+    action=authorization.Action.View,
 )
-assert resources == [access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk)]
+assert resources == [authorization.Resource(type=authorization.ResourceType.Dashboard, id=dashboard.pk)]
 
 # see who can access a dashboard
-subjects = access_control.list_subjects(
-    subject=access_control.Subject(type=access_control.SubjectType.User),
-    resource=access_control.Resource(type=access_control.ResourceType.Dashboard, id=dashboard.pk),
-    action=access_control.Action.View,
+subjects = authorization.list_subjects(
+    subject=authorization.Subject(type=authorization.SubjectType.User),
+    resource=authorization.Resource(type=authorization.ResourceType.Dashboard, id=dashboard.pk),
+    action=authorization.Action.View,
 )
-assert subjects == [access_control.Subject(user_id=user.pk)]
+assert subjects == [authorization.Subject(user_id=user.pk)]
 
 # Bring together role-based access control, data warehouse table access control, and relationship based access control into one beautiful access control graph
-access_control.write(
+authorization.write(
     [
-        access_control.AddRelationshipRequest(
-            subject=access_control.Subject(role=role, project_id=project.pk), # ex: "project:{project.pk}:role:{role.pk}"
+        authorization.AddRelationshipRequest(
+            subject=authorization.Subject(role=role, project_id=project.pk), # ex: "project:{project.pk}:role:{role.pk}"
             resource=DataWarehouseTableResource(project_id=project.pk, table="postgres.stripe_invoices"), # ex: "project:{project.pk}:data_warehouse_table:postgres.stripe_invoices"
-            action=access_control.Action.View,
+            action=authorization.Action.View,
         ),
     ]
 )
@@ -309,9 +309,9 @@ access_control.write(
 
 ### Gotcha: Django-isms
 
-The mega-brained reader will know that there is a lot of access control checks and enforcement which happens in Django-land. With the new Python API we will re-implement the many Django permission enforcement and utility classes to use the new Python API under the hood, instead of directly evaluating access control rules from the database.
+The mega-brained reader will know that there is a lot of access control checks and enforcement which happens in Django-land. With the new Python SDK we will re-implement the many Django permission enforcement and utility classes to use the new Python SDK under the hood, instead of directly evaluating access control rules from the database.
 
-For example, `AccessControlViewSetMixin` would need to be updated to use the new python API instead of implementing the access control checks directly.
+For example, `AccessControlViewSetMixin` would need to be updated to use the new python SDK instead of implementing the access control checks directly.
 
 ### Gotcha: list operations
 List operations introduce an additional challenge because our existing access control system enforces object-level restrictions directly in the queryset. This means unauthorized objects are omitted from list results entirely. We will need to be careful to maintain this pre-existing behavior while migrating. Some queries are easy to migrate, only filtering objects that match a list of specific ids, whereas others are more complicated, joining on access control tables.
@@ -326,7 +326,7 @@ As we've scaled up the access coverage over more products, the data warehouse, p
 
 We already have lots of hierarchy in our rules: project admin overrides, creator escape hatch, object-level overrides, roles, etc. that are all dependent on their relationships between each other. ABAC is better suited for flat access control structures that are dependent on inline object attributes. For us, ReBAC is a better fit since it directly models relations.
 
-**Move existing code behind new Python API, but don't adopt ReBAC**
+**Move existing code behind new Python SDK, but don't adopt ReBAC**
 
 In this case, we are still spending a lot of time maintaining the code which evaluates the access control rules. Each new use case requires lots of new Python code that intermixes different concerns and is dificult to refactor.
 
@@ -336,11 +336,13 @@ If we adopt a standard ReBAC engine, then code examples on the internet makes it
 we want to spend the bulk of our development effort on the authorization rules, not the plumbing that enables that.
 
 ### Rollout?
-The python API will control rollout of ReBAC backed access control. Initially, we will port the existing access control code into the access control product folder, and expose it through the new python API. Then, once we start implementing it to be backed by ReBAC, we will set up a flag that determines whether the legacy access control code or the new ReBAC model should be used for authorization evaluation.
+The python SDK will control rollout of ReBAC backed access control. Initially, we will port the existing access control code into the access control product folder, and expose it through the new python SDK. Then, once we start implementing it to be backed by ReBAC, we will set up a flag that determines whether the legacy access control code or the new ReBAC model should be used for authorization evaluation.
+
+This flag will have multiple variants: `off`, `shadow-log`, `rebac`. In `off`, only the existing Python logic is used. In `shadow-log` the existing Python is used as the authoritative answer, but a request is made to the ReBAC service in parallel and that result is logged against the result returned by the Python implementation. In `rebac`, the ReBAC service's response is used as the authoritative answer, and the Python implementation's response is logged.
 
 ### What about the data model?
 
-Until we have a reason to replace the existing data model, we will avoid doing so. In any implementation, we need a source of truth for access control policies. All that changes is these policies are replicated into the ReBAC engine.
+In the first iteration we will maintain the existing data model by implementing a dual write system for object permissions. However, once the migration is complete we may re-evaluate this and opt to use the ReBAC service as the canonical source of truth for authorization policies, including those that we display in the UI and allow customers to configure.
 
 ### Most specific access control?
 
@@ -350,10 +352,14 @@ We will block this initiative on most-specific access control being shipped. Mai
 
 No, I think we should avoid this, and remain cloud-native since this is core infra.
 
+### Who would own this?
+
+Platform features would be responsible for maintaining, monitoring, scaling, and on-call response.
+
 ## Sprints
 
 1. Research ReBAC frameworks, benchmark them, and select final option
-2. Implement python control API using existing access control code
+2. Implement python authorization SDK using existing access control code
 3. Implement access control decision logging
 4. Set up ReBAC infra in prod, update local dev stack, update self-hosted stuff
 5. Implement ReBAC backed access control behind a feature flag, add ReBAC decisions to access control logging
