@@ -66,7 +66,7 @@ I propose we adopt relationship-based access control (ReBAC) and repackage acces
 ### Success criteria
 
 1. No customer's access is impacted by the change.
-2. All authorization requests are pass through a single interface.
+2. All authorization decisions are made in a single place.
 3. We have audit logs documenting authorization decisions.
 4. Authorization becomes standardized.
 
@@ -101,6 +101,8 @@ For example, a user can edit a dashboard if they are a project admin, or they ar
 [SpiceDB](https://authzed.com/spicedb) is an authorization database with support for ReBAC configuration. It is [open source](https://github.com/authzed/spicedb), under the Apache 2.0 License, and maintained by [AuthZed](https://authzed.com) who sell authorization as a service.
 
 [Permify](https://permify.co/) is an [open source](https://github.com/Permify/permify) ReBAC implementation that, like OpenFGA, aims to be cloud-native. It is  licensed under the APGL-3 license and maintained by [FusionAuth](https://fusionauth.io/) who sell authorization as a service.
+
+[Cedar](https://cedarpolicy.com) is an [open source]() policy engine that supports ReBAC authorization models. Unlike the other engines, it is very much bring your own batteries, requiring you to implement core ReBAC semantics. However, it can be embedded in existing programs and you provide your application code provides relationship data.
 
 ### Pros & Cons
 
@@ -347,6 +349,15 @@ In the first iteration we will maintain the existing data model by implementing 
 ### Most specific access control?
 
 We will block this initiative on most-specific access control being shipped. Maintaining two big access control changes at once would be too difficult.
+
+### What authorization questions are in or out of scope?
+
+The goal is that all authorization questions are answered by the new engine. For example, this includes:
+
+1. Organization and project access
+2. Contextual policies (i.e. timestmap, risk, etc.)
+3. Subject-policies (i.e. token type, mcp user agent, non-user subject, etc.)
+4. Feature entitlement
 
 ### New vendor?
 
